@@ -2,21 +2,26 @@
 package xmlsig
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"errors"
+
 	// import supported crypto hash function
 	_ "crypto/sha1"
 	_ "crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/xml"
+
+	"github.com/ucarion/c14n"
 )
 
 // Signer is used to create a Signature for the provided object.
 type Signer interface {
 	Sign([]byte) (string, error)
-	CreateSignature(interface{}) (*Signature, error)
+	CreateSignature(interface{}, string) (*Signature, error)
 	Algorithm() string
 }
 
@@ -112,12 +117,35 @@ func (s *signer) Algorithm() string {
 	return s.sigAlg.name
 }
 
-func (s *signer) CreateSignature(data interface{}) (*Signature, error) {
+func canonicalize(data interface{}) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := xml.NewEncoder(&buffer)
+
+	err := encoder.Encode(data)
+	if err != nil {
+		return nil, err
+	}
+
+	err = encoder.Flush()
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := xml.NewDecoder(&buffer)
+	canonDoc, err := c14n.Canonicalize(decoder)
+	if err != nil {
+		return nil, err
+	}
+
+	return canonDoc, nil
+}
+
+func (s *signer) CreateSignature(data interface{}, id string) (*Signature, error) {
 	signature := newSignature()
 	signature.SignedInfo.SignatureMethod.Algorithm = s.sigAlg.name
 	signature.SignedInfo.Reference.DigestMethod.Algorithm = s.digestAlg.name
 	// canonicalize the Item
-	canonData, id, err := canonicalize(data)
+	canonData, err := canonicalize(data)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +156,7 @@ func (s *signer) CreateSignature(data interface{}) (*Signature, error) {
 	digest := s.digest(canonData)
 	signature.SignedInfo.Reference.DigestValue = digest
 	// canonicalize the SignedInfo
-	canonData, _, err = canonicalize(signature.SignedInfo)
+	canonData, err = canonicalize(signature.SignedInfo)
 	if err != nil {
 		return nil, err
 	}
