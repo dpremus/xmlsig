@@ -19,7 +19,7 @@ func TestExample(t *testing.T) {
 		return
 	}
 
-	// here is the doument that we need to sign
+	// here is the document that we need to sign
 	doc := Test1{
 		Data: "Hello, World!",
 		ID:   "_1234",
